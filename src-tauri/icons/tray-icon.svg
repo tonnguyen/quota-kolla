@@ -1,0 +1,17 @@
+<svg viewBox="0 0 22 22" width="22" height="22" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .track { stroke: #D1D1D6; }
+      .progress { stroke: #007AFF; }
+    </style>
+  </defs>
+  <!-- Background track (gray circle) -->
+  <circle cx="11" cy="11" r="9" fill="none" stroke-width="2"
+          stroke-dasharray="56.55" stroke-dashoffset="0"
+          class="track" />
+  <!-- Progress fill (70% blue, rotated -90deg to start from top) -->
+  <circle cx="11" cy="11" r="9" fill="none" stroke-width="2"
+          stroke-dasharray="39.58 56.55" stroke-dashoffset="0"
+          transform="rotate(-90 11 11)"
+          class="progress" />
+</svg>
