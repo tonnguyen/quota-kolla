@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod color;
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
