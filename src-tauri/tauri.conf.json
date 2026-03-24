@@ -4,12 +4,13 @@
   "version": "0.1.0",
   "identifier": "com.tonnguyen.quota-kolla",
   "build": {
-    "beforeDevCommand": "node ../scripts/build-frontend.mjs",
-    "beforeBuildCommand": "node ../scripts/build-frontend.mjs",
+    "beforeDevCommand": "node scripts/build-frontend.mjs",
+    "beforeBuildCommand": "node scripts/build-frontend.mjs",
     "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "menu",
