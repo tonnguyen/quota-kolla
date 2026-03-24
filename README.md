@@ -55,6 +55,21 @@ npm install
 npm run dev
 ```
 
+## Run Tests
+
+From the repo root:
+
+```bash
+cd src-tauri
+cargo test
+```
+
+Or in one line:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
 ## Build
 
 ```bash
@@ -76,6 +91,35 @@ The workflow currently builds:
 
 - macOS
 - Windows
+
+## Cut a Release
+
+To create a release build through GitHub Actions, bump the app version first, commit it, then push a version tag.
+
+Example:
+
+```bash
+git checkout main
+
+# update version in:
+# - package.json
+# - src-tauri/Cargo.toml
+# - src-tauri/tauri.conf.json
+
+git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
+git commit -m "Bump version to 0.1.1"
+git push
+
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+That tag triggers the release workflow, which:
+
+- builds macOS artifacts
+- builds Windows artifacts
+- creates or updates a draft GitHub Release
+- attaches the generated bundles to that release
 
 ## Configuration
 
