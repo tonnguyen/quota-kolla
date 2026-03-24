@@ -1,30 +1,77 @@
 # Quota kolla
 
-A macOS menu bar app for tracking Claude, zAI, and Codex usage from the menu bar.
+Quota kolla is a macOS menu bar app for keeping an eye on AI usage limits without opening each CLI or provider dashboard.
+
+It renders compact provider widgets in the menu bar and shows a popup with every available usage window plus reset countdowns.
+
+## What It Tracks
+
+- Claude
+  5h, 7d, Opus, Sonnet
+- zAI
+  5h and 30d
+- Codex
+  primary and secondary usage windows, shown as 5h and 7d in the UI
 
 ## Features
 
-- Display usage for Claude, Codex, and GLM providers
-- Multiple display modes: Bar, Text, Circle
-- Click menubar icon to view detailed usage dropdown
-- Configure providers and display modes in Preferences
-- Automatic dark/light theme adaptation
+- Native macOS menu bar app built with Tauri 2
+- Multiple widget display modes per provider: `bar`, `text`, `circle`
+- Provider popup with:
+  percentage used
+  all available usage windows
+  `Reset in ...` countdowns
+- Preferences window for enabling/disabling providers
+- Light/dark aware popup styling
+- Background refresh of tray and popup data
 
-## Usage
+## How It Works
 
-1. Click the menubar icon to view current usage
-2. Each provider shows 5h and 7d/30d usage windows
-3. Click "Preferences..." to configure which providers to display
-4. Click "Quit" to exit the application
+Quota kolla reads local auth/config that your CLI tools already use, then calls provider APIs:
+
+- Claude: macOS Keychain entry `Claude Code-credentials`, then Anthropic OAuth usage API
+- zAI: `~/.ccs/glm.settings.json`, then Z.AI quota API
+- Codex: `~/.codex/auth.json`, then the ChatGPT backend usage endpoint
+
+## Requirements
+
+- macOS
+- Rust toolchain
+- Node.js
+- Bun or npm-compatible JS tooling
+- Xcode Command Line Tools
+
+For provider data to work, you also need to be logged into the corresponding CLI/provider.
+
+## Install Dependencies
+
+```bash
+npm install
+```
+
+## Development
+
+```bash
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+The frontend assets are copied into `dist/` by `./build.sh`, and Tauri produces the app bundle during `tauri build`.
 
 ## Configuration
 
-Configuration is stored in:
+Quota kolla stores its config at:
+
 - macOS: `~/Library/Application Support/quota-kolla/config.json`
 - Linux: `~/.config/quota-kolla/config.json`
-- Windows: `%APPDATA%\quota-kolla\config.json`
+- Windows: `%APPDATA%\\quota-kolla\\config.json`
 
-### Config Format
+Example:
 
 ```json
 {
@@ -37,47 +84,17 @@ Configuration is stored in:
 }
 ```
 
-## Requirements
+## Repo Layout
 
-- macOS
-- Rust
-- Node.js 18+
-- Xcode Command Line Tools
-- Claude Code logged in (OAuth token stored in macOS Keychain)
+- `src/`
+  menu and preferences frontend
+- `src-tauri/src/`
+  Rust backend, tray rendering, provider fetching, config handling
+- `build.sh`
+  copies frontend files into `dist/` for Tauri
 
-## Build
+## Notes
 
-```bash
-npm install
-npm run tauri build
-```
-
-App bundle: `src-tauri/target/release/bundle/macos/Quota kolla.app`
-
-## Development
-
-```bash
-npm run tauri dev
-```
-
-## How It Works
-
-1. Reads the Claude OAuth token from macOS Keychain (`Claude Code-credentials`)
-2. Calls `https://api.anthropic.com/api/oauth/usage` → `five_hour.utilization`
-3. Renders a circular progress ring SVG with the usage percentage
-4. Refreshes every 5 minutes
-
-## Design
-
-- 22×22 point circular progress ring
-- Blue (`#007AFF`) arc proportional to Claude 5h usage
-- Gray background track (`#D1D1D6`)
-- Built with Tauri 2.x (Rust)
-
-## Running the App
-
-```bash
-open "src-tauri/target/release/bundle/macos/Quota kolla.app"
-```
-
-The icon appears in the menu bar. To quit: `pkill -f "Quota kolla"` or use the "Quit" menu option.
+- zAI uses `30d` for the long window in the popup.
+- Codex depends on the local auth file format used by the Codex CLI.
+- If a provider is unavailable or auth is missing, the popup shows an error row for that provider.
