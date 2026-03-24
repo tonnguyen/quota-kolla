@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, Emitter, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewWindow, Emitter};
 use crate::provider::ProviderUsage;
 use std::sync::{Arc, Mutex};
 
@@ -20,36 +20,30 @@ impl MenuState {
     pub fn show_menu(&mut self, app: &AppHandle, data: Vec<ProviderUsage>) {
         self.usage_data = data;
 
-        if let Some(window) = &self.window {
-            // Update existing window and show
-            let _ = window.emit("usage-data", &self.usage_data);
-            let _ = window.show();
-            let _ = window.set_focus();
-            return;
-        }
-
-        // Calculate height based on provider count
-        let height = Self::calculate_height(&self.usage_data) as f64;
-        let width = 280.0;
-
-        match WebviewWindowBuilder::new(
-            app,
-            "menu",
-            WebviewUrl::App("menu.html".into())
-        )
-        .title("Usage Menu")
-        .inner_size(width, height)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .build() {
-            Ok(w) => {
-                let _ = w.emit("usage-data", &self.usage_data);
-                self.window = Some(w);
+        // Get the existing window (created by Tauri at startup)
+        let window = if let Some(w) = &self.window {
+            w
+        } else {
+            // First time - get the window that Tauri already created
+            match app.get_webview_window("menu") {
+                Some(w) => {
+                    self.window = Some(w.clone());
+                    // Set window size dynamically based on content
+                    let height = Self::calculate_height(&self.usage_data) as f64;
+                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: 280, height: height as u32 }));
+                    &self.window.as_ref().unwrap()
+                }
+                None => {
+                    eprintln!("Menu window not found - make sure it's defined in tauri.conf.json");
+                    return;
+                }
             }
-            Err(e) => eprintln!("Failed to create menu window: {}", e),
-        }
+        };
+
+        // Update and show the window
+        let _ = window.emit("usage-data", &self.usage_data);
+        let _ = window.show();
+        let _ = window.set_focus();
     }
 
     /// Hide the dropdown menu
