@@ -9,7 +9,25 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [],
+    "windows": [
+      {
+        "label": "menu",
+        "url": "menu.html",
+        "hidden": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
+      },
+      {
+        "label": "preferences",
+        "url": "preferences.html",
+        "hidden": true,
+        "decorations": true,
+        "resizable": false,
+        "width": 400,
+        "height": 350
+      }
+    ],
     "security": {
       "csp": null
     }
