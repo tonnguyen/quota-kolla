@@ -2,16 +2,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::{Arc, Mutex};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Listener, Manager};
 
 mod color;
 mod config;
 mod provider;
 mod render;
+mod menu;
 
 use config::Config;
 use provider::all_providers;
 use render::{build_full_svg, render_svg_to_rgba};
+use menu::MenuState;
 
 // ── Theme detection ───────────────────────────────────────────────────
 
@@ -67,6 +69,9 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
+            // Initialize menu state
+            let menu_state = Arc::new(Mutex::new(MenuState::new()));
+            app.manage(menu_state.clone());
             use tauri::tray::TrayIconBuilder;
 
             let cfg = config.lock().unwrap();
@@ -86,10 +91,25 @@ fn main() {
                 .expect("Failed to render initial SVG");
             let initial_icon = tauri::image::Image::new_owned(initial_rgba, width * 2, height * 2);
 
+            let app_handle_for_tray = app.handle().clone();
             TrayIconBuilder::with_id("main")
                 .icon(initial_icon)
                 .icon_as_template(false)
+                .on_tray_icon_event(move |_tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        ..
+                    } = event {
+                        let _ = app_handle_for_tray.emit("tray-click", ());
+                    }
+                })
                 .build(app)?;
+
+            // Listen for tray clicks to show menu
+            let app_handle_for_events = app.handle().clone();
+            app.listen("tray-click", move |_| {
+                show_menu(app_handle_for_events.clone());
+            });
 
             // Cache: (provider_usage_map, dark_mode)
             let all_provider_ids: Vec<String> = all_providers()
@@ -152,6 +172,31 @@ fn main() {
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            show_menu,
+            hide_menu,
+            quit_app,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn show_menu(app: AppHandle) {
+    let providers = crate::provider::fetch_all_usage();
+    let menu_state = menu::get_menu_state(&app);
+    let mut state = menu_state.lock().unwrap();
+    state.show_menu(&app, providers);
+}
+
+#[tauri::command]
+fn hide_menu(app: AppHandle) {
+    let menu_state = menu::get_menu_state(&app);
+    let mut state = menu_state.lock().unwrap();
+    state.hide_menu();
+}
+
+#[tauri::command]
+fn quit_app() {
+    std::process::exit(0);
 }
