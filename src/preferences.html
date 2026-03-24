@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preferences</title>
+  <link rel="stylesheet" href="preferences.css">
+</head>
+<body>
+  <div class="preferences">
+    <h2>Preferences</h2>
+
+    <div class="pref-section">
+      <h3>Providers</h3>
+
+      <div class="pref-item" data-provider="claude">
+        <input type="checkbox" id="claude-enabled" checked>
+        <label for="claude-enabled">Claude</label>
+
+        <select id="claude-mode">
+          <option value="bar" selected>Bar</option>
+          <option value="text">Text</option>
+          <option value="circle">Circle</option>
+        </select>
+      </div>
+
+      <div class="pref-item" data-provider="ccs">
+        <input type="checkbox" id="ccs-enabled" checked>
+        <label for="ccs-enabled">CCS</label>
+
+        <select id="ccs-mode">
+          <option value="bar" selected>Bar</option>
+          <option value="text">Text</option>
+          <option value="circle">Circle</option>
+        </select>
+      </div>
+
+      <div class="pref-item" data-provider="codex">
+        <input type="checkbox" id="codex-enabled" checked>
+        <label for="codex-enabled">Codex</label>
+
+        <select id="codex-mode">
+          <option value="bar" selected>Bar</option>
+          <option value="text">Text</option>
+          <option value="circle">Circle</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="pref-actions">
+      <button class="btn-cancel">Cancel</button>
+      <button class="btn-save">Save</button>
+    </div>
+  </div>
+
+  <script type="module" src="preferences.js"></script>
+</body>
+</html>

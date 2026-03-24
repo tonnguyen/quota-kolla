@@ -176,6 +176,9 @@ fn main() {
             show_menu,
             hide_menu,
             quit_app,
+            get_preferences,
+            save_preferences,
+            show_preferences,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -199,4 +202,23 @@ fn hide_menu(app: AppHandle) {
 #[tauri::command]
 fn quit_app() {
     std::process::exit(0);
+}
+
+#[tauri::command]
+async fn get_preferences() -> Result<config::Config, String> {
+    Ok(config::Config::load())
+}
+
+#[tauri::command]
+async fn save_preferences(config: config::Config) -> Result<(), String> {
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn show_preferences(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("preferences") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }

@@ -13,7 +13,7 @@
       {
         "label": "menu",
         "url": "menu.html",
-        "hidden": true,
+        "visible": false,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true
@@ -21,7 +21,7 @@
       {
         "label": "preferences",
         "url": "preferences.html",
-        "hidden": true,
+        "visible": false,
         "decorations": true,
         "resizable": false,
         "width": 400,

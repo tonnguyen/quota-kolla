@@ -164,6 +164,7 @@ async function handleAction(action) {
       switch (action) {
         case 'preferences':
           await invoke('show_preferences');
+          await invoke('hide_menu');
           break;
         case 'quit':
           await invoke('quit_app');
