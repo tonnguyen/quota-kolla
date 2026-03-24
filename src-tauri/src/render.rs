@@ -94,27 +94,54 @@ pub fn build_full_svg(
     let width = total_width + spacing;
     let height = providers.iter().map(|(_, _, m)| m.height()).max().unwrap_or(16);
 
-    let mut segments = Vec::new();
-    let mut x_offset = 0;
+    let text_color = if dark { "#FFFFFF" } else { "#000000" };
+    let track_color = if dark { "#48484A" } else { "#E5E5EA" };
+
+    let mut elements = Vec::new();
+    let mut x_offset: u32 = 0;
 
     for (name, usage, mode) in providers {
-        let segment_svg = render_provider_svg(name, *usage, *mode, dark);
-        // Extract the inner content (without svg tags)
-        let inner = segment_svg
-            .strip_prefix("<svg viewBox=\"0 0 ")
-            .and_then(|s| s.split("\" width=\"").nth(1))
-            .and_then(|s| s.split("\" height=\"").nth(1))
-            .and_then(|s| s.split("\" xmlns=\"http://www.w3.org/2000/svg\">\n").nth(1))
-            .and_then(|s| s.strip_suffix("</svg>"))
-            .unwrap_or("");
+        let usage_color = get_usage_color(*usage);
+        let pct_text = format!("{:.0}%", usage.round());
 
-        segments.push(format!(
-            r##"  <g transform="translate({}, 0)">{}</g>"##,
-            x_offset, inner
-        ));
+        match mode {
+            DisplayMode::Bar => {
+                let bar_w = 31.0_f64;
+                let fill_w = (bar_w * usage / 100.0).clamp(0.0, bar_w);
+                let label = format!("{}: {}", name, pct_text);
+                let x = x_offset;
+                elements.push(format!(
+                    r##"  <text x="{x}" y="6.5" font-family="system-ui,-apple-system,Helvetica" font-size="6.5" font-weight="500" fill="{tc}">{label}</text>
+  <rect x="{x}" y="11" width="{bw}" height="3" rx="1.5" fill="{tkc}"/>
+  <rect x="{x}" y="11" width="{fw:.1}" height="3" rx="1.5" fill="{fc}"/>"##,
+                    x = x, tc = text_color, tkc = track_color, fc = usage_color,
+                    bw = bar_w, fw = fill_w, label = label,
+                ));
+            }
+            DisplayMode::Text => {
+                let label = format!("{}: {}", name, pct_text);
+                elements.push(format!(
+                    r##"  <text x="{x}" y="7" font-family="system-ui,-apple-system,Helvetica" font-size="7" font-weight="500" fill="{fc}">{label}</text>"##,
+                    x = x_offset, fc = usage_color, label = label,
+                ));
+            }
+            DisplayMode::Circle => {
+                let radius = 7.0_f64;
+                let (filled, circumference) = calculate_circle_dash_array(*usage, radius);
+                let cx = x_offset + 8;
+                let cy = 8;
+                elements.push(format!(
+                    r##"  <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke-width="2" stroke="{tc}" stroke-dasharray="{c} {c}"/>
+  <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke-width="2" stroke="{fc}" stroke-dasharray="{f} {c}" transform="rotate(-90 {cx} {cy})"/>"##,
+                    cx = cx, cy = cy, r = radius, tc = track_color, fc = usage_color,
+                    c = circumference, f = filled,
+                ));
+            }
+        }
 
-        x_offset += mode.width() as i32 + 4;
+        x_offset += mode.width() + 4;
     }
+    let segments = elements;
 
     format!(
         r##"<svg viewBox="0 0 {} {}" width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">
