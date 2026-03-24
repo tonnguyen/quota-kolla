@@ -61,7 +61,21 @@ npm run dev
 npm run build
 ```
 
-The frontend assets are copied into `dist/` by `./build.sh`, and Tauri produces the app bundle during `tauri build`.
+The frontend assets are copied into `dist/` by `scripts/build-frontend.mjs`, and Tauri produces the app bundle during `tauri build`.
+
+## CI / Releases
+
+GitHub Actions builds desktop bundles automatically for:
+
+- `main` pushes
+  uploaded as workflow artifacts
+- `v*` tags
+  uploaded as workflow artifacts and attached to a draft GitHub Release
+
+The workflow currently builds:
+
+- macOS
+- Windows
 
 ## Configuration
 

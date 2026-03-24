@@ -6,7 +6,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "npm run build:frontend && tauri build",
-    "build:frontend": "./build.sh",
+    "build:frontend": "node scripts/build-frontend.mjs",
     "build:tauri": "tauri build"
   },
   "dependencies": {
