@@ -1,0 +1,205 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #333;
+  background: #fff;
+  overflow-x: hidden;
+}
+
+.dropdown {
+  width: 320px;
+  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.providers {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.provider {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.provider:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #333;
+}
+
+.provider-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 4px;
+}
+
+.provider-name {
+  flex: 1;
+}
+
+.provider-usage {
+  font-size: 11px;
+  color: #666;
+  font-weight: 400;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 3px;
+}
+
+.progress-fill.low {
+  background: #4caf50;
+}
+
+.progress-fill.medium {
+  background: #ff9800;
+}
+
+.progress-fill.high {
+  background: #f44336;
+}
+
+.provider-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #666;
+}
+
+.provider-reset {
+  font-size: 10px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.actions {
+  display: flex;
+  border-top: 1px solid #e0e0e0;
+  background: #f9f9f9;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-family: inherit;
+}
+
+.action-btn:hover {
+  background: #e8e8e8;
+}
+
+.action-btn:first-child {
+  border-right: 1px solid #e0e0e0;
+}
+
+/* Scrollbar styling */
+.providers::-webkit-scrollbar {
+  width: 8px;
+}
+
+.providers::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.providers::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+
+.providers::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  body {
+    color: #e0e0e0;
+    background: #1e1e1e;
+  }
+
+  .provider {
+    border-bottom-color: #333;
+  }
+
+  .provider-header {
+    color: #e0e0e0;
+  }
+
+  .provider-usage {
+    color: #aaa;
+  }
+
+  .progress-bar {
+    background: #333;
+  }
+
+  .provider-details {
+    color: #aaa;
+  }
+
+  .provider-reset {
+    color: #777;
+  }
+
+  .actions {
+    border-top-color: #333;
+    background: #252525;
+  }
+
+  .action-btn {
+    color: #e0e0e0;
+  }
+
+  .action-btn:hover {
+    background: #333;
+  }
+
+  .action-btn:first-child {
+    border-right-color: #333;
+  }
+
+  .providers::-webkit-scrollbar-thumb {
+    background: #444;
+  }
+
+  .providers::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+}
