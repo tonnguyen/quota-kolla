@@ -1,6 +1,6 @@
-# MenuBar Progress App
+# Quota kolla
 
-A macOS menu bar app displaying Claude's 5-hour usage as a circular progress ring.
+A macOS menu bar app for tracking Claude, zAI, and Codex usage from the menu bar.
 
 ## Features
 
@@ -20,9 +20,9 @@ A macOS menu bar app displaying Claude's 5-hour usage as a circular progress rin
 ## Configuration
 
 Configuration is stored in:
-- macOS: `~/Library/Application Support/menubar-progress/config.json`
-- Linux: `~/.config/menubar-progress/config.json`
-- Windows: `%APPDATA%\menubar-progress\config.json`
+- macOS: `~/Library/Application Support/quota-kolla/config.json`
+- Linux: `~/.config/quota-kolla/config.json`
+- Windows: `%APPDATA%\quota-kolla\config.json`
 
 ### Config Format
 
@@ -52,7 +52,7 @@ npm install
 npm run tauri build
 ```
 
-App bundle: `src-tauri/target/release/bundle/macos/MenuBar Progress.app`
+App bundle: `src-tauri/target/release/bundle/macos/Quota kolla.app`
 
 ## Development
 
@@ -77,7 +77,7 @@ npm run tauri dev
 ## Running the App
 
 ```bash
-open "src-tauri/target/release/bundle/macos/MenuBar Progress.app"
+open "src-tauri/target/release/bundle/macos/Quota kolla.app"
 ```
 
-The icon appears in the menu bar. To quit: `pkill -f "MenuBar Progress"` or use the "Quit" menu option.
+The icon appears in the menu bar. To quit: `pkill -f "Quota kolla"` or use the "Quit" menu option.

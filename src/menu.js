@@ -22,11 +22,39 @@ function formatDuration(ms) {
 // Format reset time from ISO string
 function formatReset(isoString) {
   if (!isoString || isoString === 'N/A') return 'N/A';
-  const resetDate = new Date(isoString);
+  const numericValue = Number(isoString);
+  const resetDate = Number.isFinite(numericValue) && `${numericValue}` === `${isoString}`
+    ? new Date(numericValue > 10_000_000_000 ? numericValue : numericValue * 1000)
+    : new Date(isoString);
   if (isNaN(resetDate.getTime())) return 'N/A';
   const now = new Date();
   const diff = resetDate - now;
   return formatDuration(diff);
+}
+
+function getUsageWindows(provider) {
+  if (Array.isArray(provider.usage_windows) && provider.usage_windows.length > 0) {
+    return provider.usage_windows;
+  }
+
+  const usageWindows = [];
+  if (provider.five_hour) {
+    usageWindows.push({ id: 'five_hour', label: '5h', ...provider.five_hour });
+  }
+  if (provider.seven_day) {
+    usageWindows.push({
+      id: 'seven_day',
+      label: provider.provider === 'glm' ? '30d' : '7d',
+      ...provider.seven_day,
+    });
+  }
+  if (provider.seven_day_opus) {
+    usageWindows.push({ id: 'seven_day_opus', label: 'Opus', ...provider.seven_day_opus });
+  }
+  if (provider.seven_day_sonnet) {
+    usageWindows.push({ id: 'seven_day_sonnet', label: 'Sonnet', ...provider.seven_day_sonnet });
+  }
+  return usageWindows;
 }
 
 // Render a single provider section
@@ -36,75 +64,26 @@ function renderProvider(provider) {
 
   if (provider.error) {
     section.innerHTML = `
-      <div class="provider-header">
-        <span class="provider-name">${provider.label}</span>
-      </div>
       <div class="error-message">
         <svg class="error-icon" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
         </svg>
-        <span>${provider.error}</span>
+        <span class="provider-name">${provider.label}: ${provider.error}</span>
       </div>
     `;
     return section;
   }
 
-  // Build window rows
-  const windows = [];
-
-  if (provider.five_hour) {
-    windows.push({
-      label: '5h',
-      ...provider.five_hour
-    });
-  }
-
-  if (provider.seven_day) {
-    const label = provider.provider === 'glm' ? '30d' : '7d';
-    windows.push({
-      label,
-      ...provider.seven_day
-    });
-  }
-
-  if (provider.seven_day_opus) {
-    windows.push({
-      label: 'Opus',
-      ...provider.seven_day_opus
-    });
-  }
-
-  if (provider.seven_day_sonnet) {
-    windows.push({
-      label: 'Son.',
-      ...provider.seven_day_sonnet
-    });
-  }
-
-  const windowRows = windows.map(w => {
-    const colorClass = getBarColorClass(w.utilization);
-    const percentage = Math.round(w.utilization);
-    const resetTime = formatReset(w.resets_at);
-
-    return `
-      <div class="window-row">
-        <span class="window-label">${w.label}</span>
-        <div class="progress-bar">
-          <div class="progress-fill ${colorClass}" style="width: ${percentage}%"></div>
-        </div>
-        <span class="percentage">${percentage}%</span>
-        <span class="reset-time">${resetTime}</span>
+  const usageWindows = getUsageWindows(provider);
+  section.innerHTML = usageWindows.map(window => `
+    <div class="usage-line">
+      <div class="usage-line-top">
+        <span class="usage-label">${provider.label} ${window.label}</span>
+        <span class="usage-value ${getBarColorClass(window.utilization)}">${Math.round(window.utilization)}%</span>
       </div>
-    `;
-  }).join('');
-
-  section.innerHTML = `
-    <div class="provider-header">
-      <span class="provider-name">${provider.label}</span>
-      <span class="reset-label">Resets in</span>
+      <div class="usage-reset">Reset in ${formatReset(window.resets_at)}</div>
     </div>
-    ${windowRows}
-  `;
+  `).join('');
 
   return section;
 }
@@ -115,7 +94,7 @@ function renderProviders(data) {
   container.innerHTML = '';
 
   if (!data || data.length === 0) {
-    container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No providers available</div>';
+    // Don't show anything on empty data - wait for data to load
     return;
   }
 
@@ -127,8 +106,8 @@ function renderProviders(data) {
 // Handle action button clicks
 async function handleAction(action) {
   if (action === 'preferences') {
-    await invoke('show_preferences');
     await invoke('hide_menu');
+    await invoke('show_preferences');
   } else if (action === 'quit') {
     await invoke('quit_app');
   }
@@ -138,24 +117,28 @@ async function handleAction(action) {
 async function setupEventListeners() {
   // Listen for usage data from Rust via Tauri event system
   const { listen } = window.__TAURI__?.event || {};
-  await listen('shown', () => {
+
+  if (!listen) {
+    return;
+  }
+
+  // Register listeners (don't await - they're persistent)
+  listen('shown', () => {
     shownAt = Date.now();
-    invoke('js_log', { msg: `shown event received, shownAt=${shownAt}` });
     // Pull data on shown in case usage-data event was emitted before listener registered
     invoke('get_menu_data').then(data => {
-      invoke('js_log', { msg: `get_menu_data returned: ${data?.length ?? 0} providers` });
       renderProviders(data);
     });
-  });
-  await listen('usage-data', (event) => {
-    invoke('js_log', { msg: `usage-data received: ${event.payload?.length ?? 0} providers` });
-    renderProviders(event.payload);
-  });
+  }).catch(() => {});
 
-  // Action buttons
-  document.querySelectorAll('.action-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      handleAction(btn.dataset.action);
+  listen('usage-data', (event) => {
+    renderProviders(event.payload);
+  }).catch(() => {});
+
+  // Menu items
+  document.querySelectorAll('.menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      handleAction(item.dataset.action);
     });
   });
 
@@ -170,22 +153,15 @@ async function setupEventListeners() {
   if (getCurrentWindow) {
     getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       const msSinceShown = Date.now() - shownAt;
-      invoke('js_log', { msg: `onFocusChanged: focused=${focused}, msSinceShown=${msSinceShown}` });
       if (!focused) {
         if (msSinceShown > 300) {
-          invoke('js_log', { msg: 'hiding menu due to focus loss' });
           invoke('hide_menu');
-        } else {
-          invoke('js_log', { msg: 'ignoring focus-lost - window was just shown' });
         }
       } else {
         shownAt = Date.now();
       }
     });
   }
-
-  // Log DOMContentLoaded to confirm JS is running
-  invoke('js_log', { msg: 'menu.js setupEventListeners complete' });
 }
 
 // Track when window was shown to prevent immediate hide on focus events
@@ -193,16 +169,19 @@ let shownAt = 0;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if Tauri API is available
+  if (!window.__TAURI__) {
+    return;
+  }
+
   setupEventListeners();
+
   // Fetch data immediately on load — the webview loads lazily on first show,
   // so events emitted by Rust before page load are missed. Pulling via invoke
   // is reliable because Rust stores data before calling window.show().
   invoke('get_menu_data').then(data => {
-    invoke('js_log', { msg: `DOMContentLoaded get_menu_data: ${data?.length ?? 0} providers` });
     if (data && data.length > 0) {
       renderProviders(data);
     }
-  }).catch(e => {
-    invoke('js_log', { msg: `DOMContentLoaded get_menu_data error: ${e}` });
-  });
+  }).catch(() => {});
 });

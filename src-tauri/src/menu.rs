@@ -19,62 +19,43 @@ impl MenuState {
     /// Show the dropdown menu at the correct position
     /// tray_rect: (x, y, width, height) in physical pixels of the tray icon
     pub fn show_menu(&mut self, app: &AppHandle, data: Vec<ProviderUsage>, tray_rect: Option<(f64, f64, f64, f64)>) {
-        eprintln!("[DEBUG] MenuState::show_menu called with {} providers", data.len());
-
         // Check if menu is already visible and toggle it off
         if let Some(window) = &self.window {
             let visible = window.is_visible().unwrap_or(false);
-            eprintln!("[DEBUG] MenuState::show_menu: cached window exists, is_visible={}", visible);
             if visible {
-                eprintln!("[DEBUG] MenuState::show_menu: hiding visible menu");
                 self.hide_menu();
                 return;
             }
-        } else {
-            eprintln!("[DEBUG] MenuState::show_menu: no cached window yet");
         }
 
         self.usage_data = data;
 
         // Get the existing window (created by Tauri at startup)
         let window = if let Some(w) = &self.window {
-            eprintln!("[DEBUG] MenuState::show_menu: using cached window");
             w
         } else {
             // First time - get the window that Tauri already created
-            eprintln!("[DEBUG] MenuState::show_menu: looking up 'menu' window from app");
             match app.get_webview_window("menu") {
                 Some(w) => {
-                    eprintln!("[DEBUG] MenuState::show_menu: found 'menu' window");
                     self.window = Some(w.clone());
                     &self.window.as_ref().unwrap()
                 }
                 None => {
-                    eprintln!("[DEBUG][ERROR] Menu window 'menu' not found - make sure it's defined in tauri.conf.json");
+                    eprintln!("Menu window 'menu' not found");
                     return;
                 }
             }
         };
 
-        // Log current window position BEFORE show
-        if let Ok(pos) = window.outer_position() {
-            eprintln!("[DEBUG] MenuState::show_menu: window position BEFORE show: {:?}", pos);
-        }
-        if let Ok(size) = window.outer_size() {
-            eprintln!("[DEBUG] MenuState::show_menu: window outer_size BEFORE show: {:?}", size);
-        }
-
         // Calculate window size
         let height = Self::calculate_height(&self.usage_data);
         let width = 280;
-        eprintln!("[DEBUG] MenuState::show_menu: setting size {}x{}", width, height);
 
         // Set window size
-        let size_result = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
             width,
             height,
         }));
-        eprintln!("[DEBUG] MenuState::show_menu: set_size result: {:?}", size_result);
 
         // Position window near tray icon (bottom-right aligned)
         if let Some((tray_x, tray_y, tray_w, tray_h)) = tray_rect {
@@ -82,30 +63,20 @@ impl MenuState {
                 // Place below the menubar, right-aligned to tray icon
                 let win_x = (tray_x + tray_w) as i32 - width as i32;
                 let win_y = (tray_y + tray_h) as i32;
-                eprintln!("[DEBUG] MenuState::show_menu: positioning at physical ({}, {})", win_x, win_y);
-                let pos_result = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                     x: win_x,
                     y: win_y,
                 }));
-                eprintln!("[DEBUG] MenuState::show_menu: set_position result: {:?}", pos_result);
             }
         }
 
         // Show window, emit shown timestamp, then emit data
-        let show_result = window.show();
-        eprintln!("[DEBUG] MenuState::show_menu: show() result: {:?}", show_result);
-        let focus_result = window.set_focus();
-        eprintln!("[DEBUG] MenuState::show_menu: set_focus() result: {:?}", focus_result);
-
-        // Log position AFTER show
-        if let Ok(pos) = window.outer_position() {
-            eprintln!("[DEBUG] MenuState::show_menu: window position AFTER show: {:?}", pos);
-        }
+        let _ = window.show();
+        let _ = window.set_focus();
 
         // Emit 'shown' so JS can guard against immediate focus-lost hide
         let _ = window.emit("shown", ());
-        let emit_result = window.emit("usage-data", &self.usage_data);
-        eprintln!("[DEBUG] MenuState::show_menu: emit('usage-data') result: {:?}", emit_result);
+        let _ = window.emit("usage-data", &self.usage_data);
     }
 
     /// Hide the dropdown menu
@@ -120,6 +91,27 @@ impl MenuState {
         self.usage_data.clone()
     }
 
+    /// Update usage data and emit to window (for background updates)
+    pub fn update_usage_data(&mut self, data: Vec<ProviderUsage>) {
+        self.usage_data = data.clone();
+
+        // Resize window if it's visible
+        if let Some(window) = &self.window {
+            if window.is_visible().unwrap_or(false) {
+                let height = Self::calculate_height(&self.usage_data);
+                let width = 280;
+                let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }));
+            }
+
+            let _ = window.emit("usage-data", &data);
+        }
+    }
+
+    /// Update internal data without emitting (for background thread)
+    pub fn set_usage_data(&mut self, data: Vec<ProviderUsage>) {
+        self.usage_data = data;
+    }
+
     /// Check if menu is currently visible
     pub fn is_visible(&self) -> bool {
         self.window.as_ref()
@@ -129,11 +121,30 @@ impl MenuState {
 
     /// Calculate window height based on content
     fn calculate_height(data: &[ProviderUsage]) -> u32 {
-        let base = 16;
-        let per_provider = 80;
-        let actions = 44;
-        let min_height = 200;
-        base + (data.len() as u32 * per_provider).max(min_height) + actions
+        // Count visible rows in the provider area.
+        let usage_lines: usize = data.iter()
+            .map(|p| {
+                if p.error.is_some() {
+                    1
+                } else if !p.usage_windows.is_empty() {
+                    p.usage_windows.len()
+                } else {
+                    let mut legacy_count = 0;
+                    if p.five_hour.is_some() { legacy_count += 1; }
+                    if p.seven_day.is_some() { legacy_count += 1; }
+                    if p.seven_day_opus.is_some() { legacy_count += 1; }
+                    if p.seven_day_sonnet.is_some() { legacy_count += 1; }
+                    legacy_count.max(1)
+                }
+            })
+            .sum();
+
+        let providers_padding = 16u32;
+        let separator = 9u32;
+        let menu_items = 68u32;
+        let line_height = 42u32;
+
+        providers_padding + (usage_lines as u32 * line_height) + separator + menu_items
     }
 }
 

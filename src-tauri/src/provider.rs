@@ -9,11 +9,21 @@ pub struct UsageWindow {
     pub resets_at: String,     // ISO timestamp
 }
 
+/// Named usage window for menu rendering
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UsageBucket {
+    pub id: String,
+    pub label: String,
+    pub utilization: f64,
+    pub resets_at: String,
+}
+
 /// Complete usage data for a provider
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProviderUsage {
     pub provider: String,
     pub label: String,
+    pub usage_windows: Vec<UsageBucket>,
     pub five_hour: Option<UsageWindow>,
     pub seven_day: Option<UsageWindow>,
     pub seven_day_opus: Option<UsageWindow>,
@@ -27,6 +37,7 @@ impl ProviderUsage {
         Self {
             provider: provider.to_string(),
             label: label.to_string(),
+            usage_windows: Vec::new(),
             five_hour: None,
             seven_day: None,
             seven_day_opus: None,
@@ -37,6 +48,15 @@ impl ProviderUsage {
                 .unwrap()
                 .as_secs() as i64,
         }
+    }
+}
+
+fn usage_bucket(id: &str, label: &str, window: &UsageWindow) -> UsageBucket {
+    UsageBucket {
+        id: id.to_string(),
+        label: label.to_string(),
+        utilization: window.utilization,
+        resets_at: window.resets_at.clone(),
     }
 }
 
@@ -106,13 +126,33 @@ impl Provider for ClaudeProvider {
             })
         };
 
+        let five_hour = map_window("five_hour");
+        let seven_day = map_window("seven_day");
+        let seven_day_opus = map_window("seven_day_opus");
+        let seven_day_sonnet = map_window("seven_day_sonnet");
+
+        let mut usage_windows = Vec::new();
+        if let Some(window) = &five_hour {
+            usage_windows.push(usage_bucket("five_hour", "5h", window));
+        }
+        if let Some(window) = &seven_day {
+            usage_windows.push(usage_bucket("seven_day", "7d", window));
+        }
+        if let Some(window) = &seven_day_opus {
+            usage_windows.push(usage_bucket("seven_day_opus", "Opus", window));
+        }
+        if let Some(window) = &seven_day_sonnet {
+            usage_windows.push(usage_bucket("seven_day_sonnet", "Sonnet", window));
+        }
+
         Ok(ProviderUsage {
             provider: "claude".to_string(),
             label: "Claude".to_string(),
-            five_hour: map_window("five_hour"),
-            seven_day: map_window("seven_day"),
-            seven_day_opus: map_window("seven_day_opus"),
-            seven_day_sonnet: map_window("seven_day_sonnet"),
+            usage_windows,
+            five_hour,
+            seven_day,
+            seven_day_opus,
+            seven_day_sonnet,
             error: None,
             fetched_at: now,
         })
@@ -178,23 +218,38 @@ impl Provider for GlmProvider {
             .unwrap()
             .as_secs() as i64;
 
-        let utilization = data["data"]["limits"]
+        let limits = data["data"]["limits"]
             .as_array()
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|l| l["type"].as_str() == Some("TOKENS_LIMIT"))
-                    .and_then(|l| l["percentage"].as_f64())
+            .ok_or_else(|| "Missing usage limits".to_string())?;
+
+        let map_limit = |limit: &serde_json::Value| -> Option<UsageWindow> {
+            Some(UsageWindow {
+                utilization: limit.get("percentage")?.as_f64()?,
+                resets_at: limit.get("nextResetTime")?.as_i64()?.to_string(),
             })
-            .unwrap_or(0.0);
+        };
+
+        let five_hour = limits.iter()
+            .find(|l| l["type"].as_str() == Some("TOKENS_LIMIT"))
+            .and_then(map_limit);
+        let thirty_day = limits.iter()
+            .find(|l| l["type"].as_str() == Some("TIME_LIMIT"))
+            .and_then(map_limit);
+
+        let mut usage_windows = Vec::new();
+        if let Some(window) = &five_hour {
+            usage_windows.push(usage_bucket("five_hour", "5h", window));
+        }
+        if let Some(window) = &thirty_day {
+            usage_windows.push(usage_bucket("thirty_day", "30d", window));
+        }
 
         Ok(ProviderUsage {
             provider: "glm".to_string(),
             label: "zAI".to_string(),
-            five_hour: Some(UsageWindow {
-                utilization,
-                resets_at: "N/A".to_string(),
-            }),
-            seven_day: None,
+            usage_windows,
+            five_hour,
+            seven_day: thirty_day,
             seven_day_opus: None,
             seven_day_sonnet: None,
             error: None,
@@ -232,20 +287,116 @@ impl Provider for CodexProvider {
     }
 
     fn fetch_usage_data(&self) -> Result<ProviderUsage, String> {
+        let auth = Self::get_auth()
+            .ok_or_else(|| "Not logged in — run `codex` to authenticate".to_string())?;
+
+        let output = Command::new("curl")
+            .args([
+                "-sS",
+                "--http2",
+                "--max-time", "10",
+                "--write-out", "\n%{http_code}",
+                "https://chatgpt.com/backend-api/wham/usage",
+                "-H", &format!("Authorization: Bearer {}", auth.access_token),
+                "-H", &format!("ChatGPT-Account-Id: {}", auth.account_id),
+                "-H", "User-Agent: codex-cli",
+                "-H", "Accept: application/json",
+            ])
+            .output()
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if stderr.is_empty() {
+                "Network error".to_string()
+            } else {
+                format!("Network error: {}", stderr)
+            });
+        }
+
+        let raw = String::from_utf8(output.stdout)
+            .map_err(|e| format!("Invalid response encoding: {}", e))?;
+        let (body, status) = raw
+            .rsplit_once('\n')
+            .ok_or_else(|| "Invalid response format".to_string())?;
+        let status: u16 = status.trim().parse()
+            .map_err(|_| "Invalid HTTP status".to_string())?;
+
+        if status == 401 {
+            return Err("Token expired — re-authenticate with `codex`".to_string());
+        }
+        if status == 403 {
+            return Err("Access denied — check your Codex plan".to_string());
+        }
+        if status == 429 {
+            return Err("Too many requests — try again later".to_string());
+        }
+        if status >= 500 {
+            return Err(format!("OpenAI API error ({})", status));
+        }
+        if status >= 400 {
+            return Err(format!("HTTP {}", status));
+        }
+
+        let data: serde_json::Value = serde_json::from_str(body)
+            .map_err(|e| format!("Invalid response: {}", e))?;
+        let rate_limit = data.get("rate_limit")
+            .ok_or_else(|| "Missing rate_limit".to_string())?;
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
 
+        let map_window = |window: Option<&serde_json::Value>| -> Option<UsageWindow> {
+            let w = window?;
+            Some(UsageWindow {
+                utilization: w.get("used_percent")?.as_f64()?,
+                resets_at: w.get("reset_at")?.as_i64()?.to_string(),
+            })
+        };
+
+        let five_hour = map_window(rate_limit.get("primary_window"));
+        let seven_day = map_window(rate_limit.get("secondary_window"));
+
+        let mut usage_windows = Vec::new();
+        if let Some(window) = &five_hour {
+            usage_windows.push(usage_bucket("five_hour", "5h", window));
+        }
+        if let Some(window) = &seven_day {
+            usage_windows.push(usage_bucket("seven_day", "7d", window));
+        }
+
         Ok(ProviderUsage {
             provider: "codex".to_string(),
             label: "Codex".to_string(),
-            five_hour: None,
-            seven_day: None,
+            usage_windows,
+            five_hour,
+            seven_day,
             seven_day_opus: None,
             seven_day_sonnet: None,
-            error: Some("Not implemented yet".to_string()),
+            error: None,
             fetched_at: now,
+        })
+    }
+}
+
+struct CodexAuth {
+    access_token: String,
+    account_id: String,
+}
+
+impl CodexProvider {
+    fn get_auth() -> Option<CodexAuth> {
+        let path = PathBuf::from(std::env::var("HOME").ok()?)
+            .join(".codex")
+            .join("auth.json");
+        let content = std::fs::read_to_string(path).ok()?;
+        let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let tokens = parsed.get("tokens")?;
+        Some(CodexAuth {
+            access_token: tokens.get("access_token")?.as_str()?.to_string(),
+            account_id: tokens.get("account_id")?.as_str()?.to_string(),
         })
     }
 }
@@ -301,6 +452,7 @@ mod tests {
         assert_eq!(usage.provider, "test");
         assert_eq!(usage.label, "Test Provider");
         assert_eq!(usage.error, Some("Test error".to_string()));
+        assert!(usage.usage_windows.is_empty());
         assert!(usage.five_hour.is_none());
         assert!(usage.seven_day.is_none());
     }

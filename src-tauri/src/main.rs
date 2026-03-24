@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Manager};
 
 mod color;
 mod config;
@@ -11,7 +11,7 @@ mod render;
 mod menu;
 
 use config::Config;
-use provider::all_providers;
+use provider::{all_providers, fetch_all_usage};
 use render::{build_full_svg, render_svg_to_rgba};
 use menu::MenuState;
 
@@ -51,12 +51,6 @@ fn update_tray_icon(
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_icon(Some(icon));
         let _ = tray.set_icon_as_template(false);
-
-        let provider_info: Vec<String> = providers
-            .iter()
-            .map(|(name, usage, _)| format!("{}={:.1}%", name, usage))
-            .collect();
-        println!("Tray updated: {} dark={}", provider_info.join(", "), dark);
     }
 }
 
@@ -107,7 +101,6 @@ fn main() {
                 .icon(initial_icon)
                 .icon_as_template(false)
                 .on_tray_icon_event(move |_tray, event| {
-                    eprintln!("[DEBUG] Tray event received: {:?}", event);
                     if let tauri::tray::TrayIconEvent::Click {
                         button: tauri::tray::MouseButton::Left,
                         button_state: tauri::tray::MouseButtonState::Up,
@@ -123,7 +116,6 @@ fn main() {
                             tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
                             tauri::Size::Logical(s) => (s.width, s.height),
                         };
-                        eprintln!("[DEBUG] Left click, tray rect: x={} y={} w={} h={}", tray_x, tray_y, tray_w, tray_h);
                         let app = app_handle_for_tray.clone();
                         std::thread::spawn(move || {
                             show_menu_at(app, tray_x, tray_y, tray_w, tray_h);
@@ -148,7 +140,29 @@ fn main() {
             // Background thread
             let app_handle = app.handle().clone();
             let config_clone = Arc::clone(&config);
+            let menu_state_for_bg = Arc::clone(&menu_state);
             std::thread::spawn(move || {
+                // Initial fetch for menu state
+                let mut initial_providers = fetch_all_usage();
+                initial_providers = initial_providers.into_iter()
+                    .filter_map(|mut p| {
+                        if p.error.as_ref().map_or(false, |e| e.contains("Not implemented")) {
+                            return None;
+                        }
+                        if let Some(error) = &p.error {
+                            if error.contains("Network error") || error.contains("status code") {
+                                p.error = Some("Network error".to_string());
+                            }
+                        }
+                        Some(p)
+                    })
+                    .collect();
+                {
+                    let mut state = menu_state_for_bg.lock().unwrap();
+                    state.set_usage_data(initial_providers.clone());
+                }
+
+                // Continue with periodic updates
                 let providers = all_providers();
                 let mut ticks = 0u32;
                 loop {
@@ -200,6 +214,25 @@ fn main() {
                             .collect();
 
                         update_tray_icon(&app_handle, &visible_providers, &cfg, new_dark);
+
+                        // Also update menu state with fresh data
+                        let mut providers = fetch_all_usage();
+                        providers = providers.into_iter()
+                            .filter_map(|mut p| {
+                                if p.error.as_ref().map_or(false, |e| e.contains("Not implemented")) {
+                                    return None;
+                                }
+                                if let Some(error) = &p.error {
+                                    if error.contains("Network error") || error.contains("status code") {
+                                        p.error = Some("Network error".to_string());
+                                    }
+                                }
+                                Some(p)
+                            })
+                            .collect();
+
+                        let mut state = menu_state_for_bg.lock().unwrap();
+                        state.set_usage_data(providers.clone());
                     }
 
                     ticks += 1;
@@ -217,24 +250,51 @@ fn main() {
             save_preferences,
             show_preferences,
             get_menu_data,
-            js_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
 fn show_menu_at(app: AppHandle, tray_x: f64, tray_y: f64, tray_w: f64, tray_h: f64) {
-    eprintln!("[DEBUG] show_menu_at: tray x={} y={} w={} h={}", tray_x, tray_y, tray_w, tray_h);
-    eprintln!("[DEBUG] show_menu_at: starting fetch_all_usage");
-    let providers = crate::provider::fetch_all_usage();
-    eprintln!("[DEBUG] show_menu_at: fetch_all_usage returned {} providers", providers.len());
-    for p in &providers {
-        eprintln!("[DEBUG]   provider={} error={:?} five_hour={}", p.provider, p.error, p.five_hour.is_some());
-    }
+    // Get cached data immediately for instant display
     let menu_state = menu::get_menu_state(&app);
-    let mut state = menu_state.lock().unwrap();
-    state.show_menu(&app, providers, Some((tray_x, tray_y, tray_w, tray_h)));
-    eprintln!("[DEBUG] show_menu_at: state.show_menu returned");
+    let cached_data = {
+        let state = menu_state.lock().unwrap();
+        state.get_usage_data()
+    };
+
+    // Show menu immediately with cached data
+    {
+        let menu_state = menu::get_menu_state(&app);
+        let mut state = menu_state.lock().unwrap();
+        state.show_menu(&app, cached_data, Some((tray_x, tray_y, tray_w, tray_h)));
+    }
+
+    // Fetch fresh data in background and update
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        let mut providers = crate::provider::fetch_all_usage();
+
+        // Filter out "Not implemented yet" errors and simplify network errors
+        providers = providers.into_iter()
+            .filter_map(|mut p| {
+                if p.error.as_ref().map_or(false, |e| e.contains("Not implemented")) {
+                    return None;
+                }
+                if let Some(error) = &p.error {
+                    if error.contains("Network error") || error.contains("status code") {
+                        p.error = Some("Network error".to_string());
+                    }
+                }
+                Some(p)
+            })
+            .collect();
+
+        // Update state and emit to window
+        let menu_state = menu::get_menu_state(&app_clone);
+        let mut state = menu_state.lock().unwrap();
+        state.update_usage_data(providers);
+    });
 }
 
 #[tauri::command]
@@ -270,11 +330,6 @@ fn get_menu_data(app: AppHandle) -> Vec<provider::ProviderUsage> {
     let menu_state = menu::get_menu_state(&app);
     let state = menu_state.lock().unwrap();
     state.get_usage_data()
-}
-
-#[tauri::command]
-fn js_log(msg: String) {
-    eprintln!("[JS] {}", msg);
 }
 
 #[tauri::command]

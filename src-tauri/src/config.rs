@@ -81,6 +81,7 @@ impl Default for Config {
         let mut providers = HashMap::new();
         providers.insert("claude".to_string(), ProviderConfig::default());
         providers.insert("glm".to_string(), ProviderConfig::default());
+        providers.insert("codex".to_string(), ProviderConfig::default());
 
         Config {
             version: 1,
@@ -94,7 +95,7 @@ impl Config {
     pub fn config_dir() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("menubar-progress")
+            .join("quota-kolla")
     }
 
     /// Get config file path
@@ -122,11 +123,13 @@ impl Config {
             }
         };
 
-        let config: Config = serde_json::from_str(&content)
+        let mut config: Config = serde_json::from_str(&content)
             .unwrap_or_else(|e| {
                 eprintln!("Failed to parse config: {}, using default", e);
                 Self::default()
             });
+
+        config.ensure_known_providers();
 
         // Validate provider keys and warn about unknown ones
         config.validate_provider_keys();
@@ -136,11 +139,19 @@ impl Config {
 
     /// Validate provider keys and warn about unknown providers
     fn validate_provider_keys(&self) {
-        let known_providers = ["claude", "glm"];
+        let known_providers = ["claude", "glm", "codex"];
         for (key, _) in &self.providers {
             if !known_providers.contains(&key.as_str()) {
-                eprintln!("Warning: Unknown provider '{}' in config. Known providers: claude, glm", key);
+                eprintln!("Warning: Unknown provider '{}' in config. Known providers: claude, glm, codex", key);
             }
+        }
+    }
+
+    fn ensure_known_providers(&mut self) {
+        for provider in ["claude", "glm", "codex"] {
+            self.providers
+                .entry(provider.to_string())
+                .or_insert_with(ProviderConfig::default);
         }
     }
 
@@ -228,13 +239,15 @@ mod tests {
         assert_eq!(config.version, 1);
         assert!(config.providers.contains_key("claude"));
         assert!(config.providers.contains_key("glm"));
-        assert_eq!(config.providers.len(), 2);
+        assert!(config.providers.contains_key("codex"));
+        assert_eq!(config.providers.len(), 3);
     }
 
     #[test]
     fn test_visible_providers() {
         let mut config = Config::default();
         config.providers.get_mut("glm").unwrap().visible = false;
+        config.providers.get_mut("codex").unwrap().visible = false;
 
         let visible = config.visible_providers();
         assert_eq!(visible.len(), 1);
@@ -244,11 +257,15 @@ mod tests {
     #[test]
     fn test_total_width() {
         let mut config = Config::default();
-        // Both visible, both bar mode: 50 + 4 + 50 = 104
-        assert_eq!(config.total_width(), 104);
+        // Three visible providers in bar mode: 50 + 4 + 50 + 4 + 50 = 158
+        assert_eq!(config.total_width(), 158);
 
         // Hide GLM: 50
         config.providers.get_mut("glm").unwrap().visible = false;
+        assert_eq!(config.total_width(), 104);
+
+        // Hide Codex too: 50
+        config.providers.get_mut("codex").unwrap().visible = false;
         assert_eq!(config.total_width(), 50);
 
         // Both hidden: placeholder 16
@@ -262,7 +279,7 @@ mod tests {
         // Unknown providers are logged but don't cause failure
         let mut config = Config::default();
         config.providers.insert("unknown".to_string(), ProviderConfig::default());
-        assert_eq!(config.providers.len(), 3);
+        assert_eq!(config.providers.len(), 4);
         // validate_provider_keys would warn but not remove the entry
     }
 }

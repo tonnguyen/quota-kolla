@@ -12,12 +12,19 @@
       <!-- Provider sections will be rendered here -->
     </div>
 
-    <div class="actions">
-      <button class="action-btn" data-action="preferences">Preferences...</button>
-      <button class="action-btn" data-action="quit">Quit</button>
+    <div class="separator"></div>
+
+    <div class="menu-item" data-action="preferences">
+      <span class="menu-item-label">Preferences...</span>
+      <span class="menu-item-shortcut">⌘,</span>
+    </div>
+
+    <div class="menu-item" data-action="quit">
+      <span class="menu-item-label">Quit</span>
+      <span class="menu-item-shortcut">⌘Q</span>
     </div>
   </div>
 
-  <script type="module" src="menu.js"></script>
+  <script src="menu.js"></script>
 </body>
 </html>

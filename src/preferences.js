@@ -16,7 +16,7 @@ async function loadConfig() {
         version: 1,
         providers: {
           claude: { visible: true, mode: 'bar' },
-          ccs: { visible: true, mode: 'bar' },
+          glm: { visible: true, mode: 'bar' },
           codex: { visible: true, mode: 'bar' }
         }
       };
@@ -33,7 +33,7 @@ async function loadConfig() {
 function updateUI() {
   if (!currentConfig || !currentConfig.providers) return;
 
-  const providers = ['claude', 'ccs', 'codex'];
+  const providers = ['claude', 'glm', 'codex'];
 
   providers.forEach(providerId => {
     const config = currentConfig.providers[providerId];
@@ -56,7 +56,7 @@ function updateUI() {
  */
 function getConfigFromUI() {
   const providers = {};
-  const providerIds = ['claude', 'ccs', 'codex'];
+  const providerIds = ['claude', 'glm', 'codex'];
 
   providerIds.forEach(providerId => {
     const checkbox = document.getElementById(`${providerId}-enabled`);
