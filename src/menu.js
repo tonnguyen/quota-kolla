@@ -1,256 +1,172 @@
-// Utility functions for rendering
+const { invoke } = window.__TAURI__?.core || {};
+const { getCurrentWindow } = window.__TAURI__?.window || {};
 
-/**
- * Get the color class for a progress bar based on percentage
- * @param {number} percentage - Usage percentage (0-100)
- * @returns {string} - CSS class name for color
- */
+// Progress bar color helper
 function getBarColorClass(percentage) {
-  if (percentage >= 90) return 'high';
-  if (percentage >= 70) return 'medium';
-  return 'low';
+  if (percentage >= 85) return 'red';
+  if (percentage >= 60) return 'yellow';
+  return 'green';
 }
 
-/**
- * Format duration in milliseconds to human-readable string
- * @param {number} ms - Duration in milliseconds
- * @returns {string} - Formatted duration (e.g., "2d 5h 30m")
- */
+// Format duration (milliseconds to human-readable)
 function formatDuration(ms) {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  const parts = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours % 24 > 0) parts.push(`${hours % 24}h`);
-  if (minutes % 60 > 0) parts.push(`${minutes % 60}m`);
-
-  return parts.length > 0 ? parts.join(' ') : '0m';
+  if (ms <= 0) return 'now';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h`;
 }
 
-/**
- * Format reset time from ISO string to human-readable string
- * @param {string} isoString - ISO 8601 date string
- * @returns {string} - Formatted date/time
- */
+// Format reset time from ISO string
 function formatReset(isoString) {
-  const date = new Date(isoString);
+  const resetDate = new Date(isoString);
   const now = new Date();
-  const diff = date.getTime() - now.getTime();
-
-  if (diff < 0) {
-    return 'Resets soon';
-  }
-
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-  if (days > 0) {
-    return `Resets in ${days}d ${hours}h`;
-  } else if (hours > 0) {
-    return `Resets in ${hours}h`;
-  } else {
-    return 'Resets soon';
-  }
+  const diff = resetDate - now;
+  return formatDuration(diff);
 }
 
-/**
- * Render a single provider section
- * @param {Object} provider - Provider data object
- * @returns {HTMLElement} - Provider section element
- */
+// Render a single provider section
 function renderProvider(provider) {
   const section = document.createElement('div');
-  section.className = 'provider';
+  section.className = 'provider-section';
 
-  // Calculate percentage
-  const percentage = provider.limit > 0
-    ? Math.round((provider.usage / provider.limit) * 100)
-    : 0;
+  if (provider.error) {
+    section.innerHTML = `
+      <div class="provider-header">
+        <span class="provider-name">${provider.label}</span>
+      </div>
+      <div class="error-message">
+        <svg class="error-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+        </svg>
+        <span>${provider.error}</span>
+      </div>
+    `;
+    return section;
+  }
 
-  const colorClass = getBarColorClass(percentage);
+  // Build window rows
+  const windows = [];
 
-  // Provider header
-  const header = document.createElement('div');
-  header.className = 'provider-header';
+  if (provider.five_hour) {
+    windows.push({
+      label: '5h',
+      ...provider.five_hour
+    });
+  }
 
-  const icon = document.createElement('div');
-  icon.className = 'provider-icon';
-  icon.style.background = provider.color || '#666';
+  if (provider.seven_day) {
+    const label = provider.provider === 'glm' ? '30d' : '7d';
+    windows.push({
+      label,
+      ...provider.seven_day
+    });
+  }
 
-  const name = document.createElement('div');
-  name.className = 'provider-name';
-  name.textContent = provider.name;
+  if (provider.seven_day_opus) {
+    windows.push({
+      label: 'Opus',
+      ...provider.seven_day_opus
+    });
+  }
 
-  const usage = document.createElement('div');
-  usage.className = 'provider-usage';
-  usage.textContent = `${percentage}%`;
+  if (provider.seven_day_sonnet) {
+    windows.push({
+      label: 'Son.',
+      ...provider.seven_day_sonnet
+    });
+  }
 
-  header.appendChild(icon);
-  header.appendChild(name);
-  header.appendChild(usage);
+  const windowRows = windows.map(w => {
+    const colorClass = getBarColorClass(w.utilization);
+    const percentage = Math.round(w.utilization);
+    const resetTime = formatReset(w.resets_at);
 
-  // Progress bar
-  const progressBar = document.createElement('div');
-  progressBar.className = 'progress-bar';
+    return `
+      <div class="window-row">
+        <span class="window-label">${w.label}</span>
+        <div class="progress-bar">
+          <div class="progress-fill ${colorClass}" style="width: ${percentage}%"></div>
+        </div>
+        <span class="percentage">${percentage}%</span>
+        <span class="reset-time">${resetTime}</span>
+      </div>
+    `;
+  }).join('');
 
-  const progressFill = document.createElement('div');
-  progressFill.className = `progress-fill ${colorClass}`;
-  progressFill.style.width = `${percentage}%`;
-
-  progressBar.appendChild(progressFill);
-
-  // Details
-  const details = document.createElement('div');
-  details.className = 'provider-details';
-
-  const used = document.createElement('div');
-  used.textContent = `${formatDuration(provider.usage)} used`;
-
-  const total = document.createElement('div');
-  total.textContent = `${formatDuration(provider.limit)} total`;
-
-  details.appendChild(used);
-  details.appendChild(total);
-
-  // Reset time
-  const reset = document.createElement('div');
-  reset.className = 'provider-reset';
-  reset.textContent = formatReset(provider.reset);
-
-  section.appendChild(header);
-  section.appendChild(progressBar);
-  section.appendChild(details);
-  section.appendChild(reset);
+  section.innerHTML = `
+    <div class="provider-header">
+      <span class="provider-name">${provider.label}</span>
+      <span class="reset-label">Resets in</span>
+    </div>
+    ${windowRows}
+  `;
 
   return section;
 }
 
-/**
- * Render all providers
- * @param {Object} data - Data object with providers array
- */
+// Render all providers
 function renderProviders(data) {
   const container = document.getElementById('providers');
-  if (!container) return;
-
   container.innerHTML = '';
 
-  if (!data.providers || data.providers.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'provider';
-    empty.textContent = 'No providers configured';
-    container.appendChild(empty);
+  if (!data || data.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">No providers available</div>';
     return;
   }
 
-  data.providers.forEach(provider => {
-    const section = renderProvider(provider);
-    container.appendChild(section);
+  data.forEach(provider => {
+    container.appendChild(renderProvider(provider));
   });
 }
 
-/**
- * Handle action button clicks
- * @param {string} action - Action type (preferences or quit)
- */
+// Handle action button clicks
 async function handleAction(action) {
-  try {
-    if (typeof window.__TAURI__ !== 'undefined') {
-      const { invoke } = window.__TAURI__.core;
-
-      switch (action) {
-        case 'preferences':
-          await invoke('show_preferences');
-          await invoke('hide_menu');
-          break;
-        case 'quit':
-          await invoke('quit_app');
-          break;
-        default:
-          console.warn('Unknown action:', action);
-      }
-    } else {
-      // Development fallback
-      console.log('Action:', action);
-    }
-  } catch (error) {
-    console.error('Error handling action:', action, error);
+  if (action === 'preferences') {
+    await invoke('show_preferences');
+    await invoke('hide_menu');
+  } else if (action === 'quit') {
+    await invoke('quit_app');
   }
 }
 
-/**
- * Setup event listeners
- */
+// Setup event listeners
 function setupEventListeners() {
+  // Listen for usage data from Rust
+  window.addEventListener('usage-data', (event) => {
+    renderProviders(event.detail);
+  });
+
   // Action buttons
   document.querySelectorAll('.action-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const action = btn.getAttribute('data-action');
-      if (action) {
-        handleAction(action);
-      }
+      handleAction(btn.dataset.action);
     });
   });
-}
 
-/**
- * Initialize the menu
- */
-async function init() {
-  setupEventListeners();
-
-  try {
-    if (typeof window.__TAURI__ !== 'undefined') {
-      const { invoke } = window.__TAURI__.core;
-
-      // Fetch usage data from backend
-      const data = await invoke('get_usage_data');
-      renderProviders(data);
-
-      // Set up refresh interval (every 30 seconds)
-      setInterval(async () => {
-        const updatedData = await invoke('get_usage_data');
-        renderProviders(updatedData);
-      }, 30000);
-    } else {
-      // Development fallback - render mock data
-      const mockData = {
-        providers: [
-          {
-            name: 'Claude',
-            usage: 45000000,
-            limit: 200000000,
-            reset: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-            color: '#7c4dff'
-          },
-          {
-            name: 'ChatGPT',
-            usage: 15000000,
-            limit: 50000000,
-            reset: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
-            color: '#00a8ff'
-          }
-        ]
-      };
-      renderProviders(mockData);
+  // Close on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      invoke('hide_menu');
     }
-  } catch (error) {
-    console.error('Error initializing menu:', error);
+  });
 
-    // Show error state
-    const container = document.getElementById('providers');
-    if (container) {
-      container.innerHTML = '<div class="provider">Error loading data</div>';
-    }
+  // Close when window loses focus
+  if (getCurrentWindow) {
+    getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (!focused) {
+        invoke('hide_menu');
+      }
+    });
   }
 }
 
-// Initialize when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+  setupEventListeners();
+
+  // Request initial data
+  invoke('show_menu');
+});

@@ -18,6 +18,14 @@ impl MenuState {
 
     /// Show the dropdown menu at the correct position
     pub fn show_menu(&mut self, app: &AppHandle, data: Vec<ProviderUsage>) {
+        // Check if menu is already visible and toggle it off
+        if let Some(window) = &self.window {
+            if window.is_visible().unwrap_or(false) {
+                self.hide_menu();
+                return;
+            }
+        }
+
         self.usage_data = data;
 
         // Get the existing window (created by Tauri at startup)
@@ -28,9 +36,6 @@ impl MenuState {
             match app.get_webview_window("menu") {
                 Some(w) => {
                     self.window = Some(w.clone());
-                    // Set window size dynamically based on content
-                    let height = Self::calculate_height(&self.usage_data) as f64;
-                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: 280, height: height as u32 }));
                     &self.window.as_ref().unwrap()
                 }
                 None => {
@@ -39,6 +44,19 @@ impl MenuState {
                 }
             }
         };
+
+        // Calculate window size
+        let height = Self::calculate_height(&self.usage_data);
+        let width = 280;
+
+        // Set window size
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width,
+            height,
+        }));
+
+        // TODO: Position window at top-right of screen below menubar
+        // For now, window will appear at default position
 
         // Update and show the window
         let _ = window.emit("usage-data", &self.usage_data);
