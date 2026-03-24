@@ -79,11 +79,22 @@ fn main() {
             let width = cfg.total_width();
             let height = cfg.max_height();
 
+            // Provider display names mapping
+            let display_names: std::collections::HashMap<&str, &str> = [
+                ("claude", "Claude"),
+                ("glm", "zAI"),
+                ("codex", "Codex"),
+            ].into_iter().collect();
+
+            let get_display_name = |id: &str| -> String {
+                display_names.get(id).copied().unwrap_or(id).to_string()
+            };
+
             // Initial icon with zero usage
             let providers: Vec<(String, f64, config::DisplayMode)> = cfg
                 .visible_providers()
                 .iter()
-                .map(|id| (id.clone(), 0.0, cfg.providers.get(id).unwrap().get_mode()))
+                .map(|id| (get_display_name(id), 0.0, cfg.providers.get(id).unwrap().get_mode()))
                 .collect();
 
             let initial_svg = build_full_svg(&providers, dark);
@@ -96,20 +107,32 @@ fn main() {
                 .icon(initial_icon)
                 .icon_as_template(false)
                 .on_tray_icon_event(move |_tray, event| {
+                    eprintln!("[DEBUG] Tray event received: {:?}", event);
                     if let tauri::tray::TrayIconEvent::Click {
                         button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        rect,
                         ..
                     } = event {
-                        let _ = app_handle_for_tray.emit("tray-click", ());
+                        // Extract tray icon rect in physical pixels
+                        let (tray_x, tray_y) = match rect.position {
+                            tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                            tauri::Position::Logical(p) => (p.x, p.y),
+                        };
+                        let (tray_w, tray_h) = match rect.size {
+                            tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
+                            tauri::Size::Logical(s) => (s.width, s.height),
+                        };
+                        eprintln!("[DEBUG] Left click, tray rect: x={} y={} w={} h={}", tray_x, tray_y, tray_w, tray_h);
+                        let app = app_handle_for_tray.clone();
+                        std::thread::spawn(move || {
+                            show_menu_at(app, tray_x, tray_y, tray_w, tray_h);
+                        });
                     }
                 })
                 .build(app)?;
 
-            // Listen for tray clicks to show menu
-            let app_handle_for_events = app.handle().clone();
-            app.listen("tray-click", move |_| {
-                show_menu(app_handle_for_events.clone());
-            });
+            // (tray-click now handled directly in on_tray_icon_event via show_menu_at)
 
             // Cache: (provider_usage_map, dark_mode)
             let all_provider_ids: Vec<String> = all_providers()
@@ -133,14 +156,19 @@ fn main() {
                     let usage_changed = if ticks % 30 == 0 {
                         let mut changed = false;
                         for provider in &providers {
-                            if let Some(usage) = provider.fetch_usage() {
-                                let old = cached_usage.get(provider.id()).copied().unwrap_or(0.0);
-                                if (old - usage).abs() > 0.1 {
-                                    cached_usage.insert(provider.id().to_string(), usage);
-                                    changed = true;
+                            match provider.fetch_usage_data() {
+                                Ok(data) => {
+                                    if let Some(window) = data.five_hour {
+                                        let old = cached_usage.get(provider.id()).copied().unwrap_or(0.0);
+                                        if (old - window.utilization).abs() > 0.1 {
+                                            cached_usage.insert(provider.id().to_string(), window.utilization);
+                                            changed = true;
+                                        }
+                                    }
                                 }
-                            } else {
-                                eprintln!("Could not fetch {} usage", provider.id());
+                                Err(e) => {
+                                    eprintln!("Could not fetch {} usage: {}", provider.id(), e);
+                                }
                             }
                         }
                         changed
@@ -152,13 +180,22 @@ fn main() {
 
                     if usage_changed || ticks == 0 {
                         let cfg = config_clone.lock().unwrap();
+
+                        // Provider display names mapping
+                        let display_names: std::collections::HashMap<&str, &str> = [
+                            ("claude", "Claude"),
+                            ("glm", "zAI"),
+                            ("codex", "Codex"),
+                        ].into_iter().collect();
+
                         let visible_providers: Vec<(String, f64, config::DisplayMode)> = cfg
                             .visible_providers()
                             .iter()
                             .filter_map(|id| {
                                 let usage = *cached_usage.get(id)?;
                                 let mode = cfg.providers.get(id)?.get_mode();
-                                Some((id.clone(), usage, mode))
+                                let display_name = display_names.get(id.as_str()).copied().unwrap_or(id);
+                                Some((display_name.to_string(), usage, mode))
                             })
                             .collect();
 
@@ -179,17 +216,30 @@ fn main() {
             get_preferences,
             save_preferences,
             show_preferences,
+            get_menu_data,
+            js_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
-#[tauri::command]
-fn show_menu(app: AppHandle) {
+fn show_menu_at(app: AppHandle, tray_x: f64, tray_y: f64, tray_w: f64, tray_h: f64) {
+    eprintln!("[DEBUG] show_menu_at: tray x={} y={} w={} h={}", tray_x, tray_y, tray_w, tray_h);
+    eprintln!("[DEBUG] show_menu_at: starting fetch_all_usage");
     let providers = crate::provider::fetch_all_usage();
+    eprintln!("[DEBUG] show_menu_at: fetch_all_usage returned {} providers", providers.len());
+    for p in &providers {
+        eprintln!("[DEBUG]   provider={} error={:?} five_hour={}", p.provider, p.error, p.five_hour.is_some());
+    }
     let menu_state = menu::get_menu_state(&app);
     let mut state = menu_state.lock().unwrap();
-    state.show_menu(&app, providers);
+    state.show_menu(&app, providers, Some((tray_x, tray_y, tray_w, tray_h)));
+    eprintln!("[DEBUG] show_menu_at: state.show_menu returned");
+}
+
+#[tauri::command]
+fn show_menu(app: AppHandle) {
+    show_menu_at(app, 0.0, 0.0, 0.0, 0.0);
 }
 
 #[tauri::command]
@@ -213,6 +263,18 @@ async fn get_preferences() -> Result<config::Config, String> {
 async fn save_preferences(config: config::Config) -> Result<(), String> {
     config.save().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn get_menu_data(app: AppHandle) -> Vec<provider::ProviderUsage> {
+    let menu_state = menu::get_menu_state(&app);
+    let state = menu_state.lock().unwrap();
+    state.get_usage_data()
+}
+
+#[tauri::command]
+fn js_log(msg: String) {
+    eprintln!("[JS] {}", msg);
 }
 
 #[tauri::command]

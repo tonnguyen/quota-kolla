@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "identifier": "com.example.menubar-progress",
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "",
+    "beforeDevCommand": "./build.sh",
+    "beforeBuildCommand": "./build.sh",
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "menu",

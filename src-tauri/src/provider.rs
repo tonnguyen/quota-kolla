@@ -145,7 +145,7 @@ impl Provider for GlmProvider {
     }
 
     fn display_name(&self) -> &str {
-        "GLM (Z.AI)"
+        "zAI"
     }
 
     fn fetch_usage_data(&self) -> Result<ProviderUsage, String> {
@@ -189,7 +189,7 @@ impl Provider for GlmProvider {
 
         Ok(ProviderUsage {
             provider: "glm".to_string(),
-            label: "GLM (Z.AI)".to_string(),
+            label: "zAI".to_string(),
             five_hour: Some(UsageWindow {
                 utilization,
                 resets_at: "N/A".to_string(),
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn test_display_names() {
         assert_eq!(ClaudeProvider.display_name(), "Claude");
-        assert_eq!(GlmProvider.display_name(), "GLM (Z.AI)");
+        assert_eq!(GlmProvider.display_name(), "zAI");
         assert_eq!(CodexProvider.display_name(), "Codex");
     }
 

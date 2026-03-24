@@ -21,7 +21,9 @@ function formatDuration(ms) {
 
 // Format reset time from ISO string
 function formatReset(isoString) {
+  if (!isoString || isoString === 'N/A') return 'N/A';
   const resetDate = new Date(isoString);
+  if (isNaN(resetDate.getTime())) return 'N/A';
   const now = new Date();
   const diff = resetDate - now;
   return formatDuration(diff);
@@ -133,10 +135,21 @@ async function handleAction(action) {
 }
 
 // Setup event listeners
-function setupEventListeners() {
-  // Listen for usage data from Rust
-  window.addEventListener('usage-data', (event) => {
-    renderProviders(event.detail);
+async function setupEventListeners() {
+  // Listen for usage data from Rust via Tauri event system
+  const { listen } = window.__TAURI__?.event || {};
+  await listen('shown', () => {
+    shownAt = Date.now();
+    invoke('js_log', { msg: `shown event received, shownAt=${shownAt}` });
+    // Pull data on shown in case usage-data event was emitted before listener registered
+    invoke('get_menu_data').then(data => {
+      invoke('js_log', { msg: `get_menu_data returned: ${data?.length ?? 0} providers` });
+      renderProviders(data);
+    });
+  });
+  await listen('usage-data', (event) => {
+    invoke('js_log', { msg: `usage-data received: ${event.payload?.length ?? 0} providers` });
+    renderProviders(event.payload);
   });
 
   // Action buttons
@@ -153,20 +166,43 @@ function setupEventListeners() {
     }
   });
 
-  // Close when window loses focus
+  // Close when window loses focus (guard against immediate close right after showing)
   if (getCurrentWindow) {
     getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      const msSinceShown = Date.now() - shownAt;
+      invoke('js_log', { msg: `onFocusChanged: focused=${focused}, msSinceShown=${msSinceShown}` });
       if (!focused) {
-        invoke('hide_menu');
+        if (msSinceShown > 300) {
+          invoke('js_log', { msg: 'hiding menu due to focus loss' });
+          invoke('hide_menu');
+        } else {
+          invoke('js_log', { msg: 'ignoring focus-lost - window was just shown' });
+        }
+      } else {
+        shownAt = Date.now();
       }
     });
   }
+
+  // Log DOMContentLoaded to confirm JS is running
+  invoke('js_log', { msg: 'menu.js setupEventListeners complete' });
 }
+
+// Track when window was shown to prevent immediate hide on focus events
+let shownAt = 0;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-
-  // Request initial data
-  invoke('show_menu');
+  // Fetch data immediately on load — the webview loads lazily on first show,
+  // so events emitted by Rust before page load are missed. Pulling via invoke
+  // is reliable because Rust stores data before calling window.show().
+  invoke('get_menu_data').then(data => {
+    invoke('js_log', { msg: `DOMContentLoaded get_menu_data: ${data?.length ?? 0} providers` });
+    if (data && data.length > 0) {
+      renderProviders(data);
+    }
+  }).catch(e => {
+    invoke('js_log', { msg: `DOMContentLoaded get_menu_data error: ${e}` });
+  });
 });

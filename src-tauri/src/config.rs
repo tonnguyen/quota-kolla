@@ -31,7 +31,7 @@ impl DisplayMode {
     /// Get width in points for this mode
     pub fn width(&self) -> u32 {
         match self {
-            DisplayMode::Bar => 32,
+            DisplayMode::Bar => 50,
             DisplayMode::Text => 24,
             DisplayMode::Circle => 16,
         }
@@ -40,7 +40,7 @@ impl DisplayMode {
     /// Get height in points for this mode
     pub fn height(&self) -> u32 {
         match self {
-            DisplayMode::Bar => 16,
+            DisplayMode::Bar => 20,
             DisplayMode::Text => 10,
             DisplayMode::Circle => 16,
         }
@@ -80,7 +80,7 @@ impl Default for Config {
     fn default() -> Self {
         let mut providers = HashMap::new();
         providers.insert("claude".to_string(), ProviderConfig::default());
-        providers.insert("ccs".to_string(), ProviderConfig::default());
+        providers.insert("glm".to_string(), ProviderConfig::default());
 
         Config {
             version: 1,
@@ -136,10 +136,10 @@ impl Config {
 
     /// Validate provider keys and warn about unknown providers
     fn validate_provider_keys(&self) {
-        let known_providers = ["claude", "ccs"];
+        let known_providers = ["claude", "glm"];
         for (key, _) in &self.providers {
             if !known_providers.contains(&key.as_str()) {
-                eprintln!("Warning: Unknown provider '{}' in config. Known providers: claude, ccs", key);
+                eprintln!("Warning: Unknown provider '{}' in config. Known providers: claude, glm", key);
             }
         }
     }
@@ -214,8 +214,8 @@ mod tests {
 
     #[test]
     fn test_display_mode_dimensions() {
-        assert_eq!(DisplayMode::Bar.width(), 32);
-        assert_eq!(DisplayMode::Bar.height(), 16);
+        assert_eq!(DisplayMode::Bar.width(), 50);
+        assert_eq!(DisplayMode::Bar.height(), 20);
         assert_eq!(DisplayMode::Text.width(), 24);
         assert_eq!(DisplayMode::Text.height(), 10);
         assert_eq!(DisplayMode::Circle.width(), 16);
@@ -227,14 +227,14 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.version, 1);
         assert!(config.providers.contains_key("claude"));
-        assert!(config.providers.contains_key("ccs"));
+        assert!(config.providers.contains_key("glm"));
         assert_eq!(config.providers.len(), 2);
     }
 
     #[test]
     fn test_visible_providers() {
         let mut config = Config::default();
-        config.providers.get_mut("ccs").unwrap().visible = false;
+        config.providers.get_mut("glm").unwrap().visible = false;
 
         let visible = config.visible_providers();
         assert_eq!(visible.len(), 1);
@@ -244,12 +244,12 @@ mod tests {
     #[test]
     fn test_total_width() {
         let mut config = Config::default();
-        // Both visible, both bar mode: 32 + 4 + 32 = 68
-        assert_eq!(config.total_width(), 68);
+        // Both visible, both bar mode: 50 + 4 + 50 = 104
+        assert_eq!(config.total_width(), 104);
 
-        // Hide CCS: 32
-        config.providers.get_mut("ccs").unwrap().visible = false;
-        assert_eq!(config.total_width(), 32);
+        // Hide GLM: 50
+        config.providers.get_mut("glm").unwrap().visible = false;
+        assert_eq!(config.total_width(), 50);
 
         // Both hidden: placeholder 16
         config.providers.get_mut("claude").unwrap().visible = false;

@@ -16,7 +16,7 @@ pub fn render_provider_svg(
     mode: DisplayMode,
     dark: bool,
 ) -> String {
-    let text_color = if dark { "#FFFFFF" } else { "#000000" };
+    let text_color = "#E0E0E0"; // Light gray - visible on both light and dark backgrounds
     let track_color = if dark { "#48484A" } else { "#E5E5EA" };
     let usage_color = get_usage_color(usage);
     let pct_text = format!("{:.0}%", usage.round());
@@ -29,15 +29,15 @@ pub fn render_provider_svg(
 }
 
 fn render_bar_svg(name: &str, usage: f64, pct_text: &str, text_color: &str, track_color: &str, fill_color: &str) -> String {
-    let bar_w = 31.0_f64;
+    let bar_w = 49.0_f64;
     let fill_w = (bar_w * usage / 100.0).clamp(0.0, bar_w);
-    let label = format!("{}: {}", name, pct_text);
+    let label = format!("{} {}", name, pct_text);
 
     format!(
-        r##"<svg viewBox="0 0 32 16" width="32" height="16" xmlns="http://www.w3.org/2000/svg">
-  <text x="0" y="6.5" font-family="system-ui,-apple-system,Helvetica" font-size="6.5" font-weight="500" fill="{tc}">{label}</text>
-  <rect x="0" y="11" width="{bw}" height="3" rx="1.5" fill="{tkc}"/>
-  <rect x="0" y="11" width="{fw:.1}" height="3" rx="1.5" fill="{fc}"/>
+        r##"<svg viewBox="0 0 50 20" width="50" height="20" xmlns="http://www.w3.org/2000/svg">
+  <text x="0" y="2" font-family="sans-serif" font-size="9" font-weight="bold" fill="{tc}" dominant-baseline="hanging">{label}</text>
+  <rect x="0" y="13" width="{bw}" height="3" rx="1.5" fill="{tkc}"/>
+  <rect x="0" y="13" width="{fw:.1}" height="3" rx="1.5" fill="{fc}"/>
 </svg>"##,
         tc = text_color,
         tkc = track_color,
@@ -94,7 +94,7 @@ pub fn build_full_svg(
     let width = total_width + spacing;
     let height = providers.iter().map(|(_, _, m)| m.height()).max().unwrap_or(16);
 
-    let text_color = if dark { "#FFFFFF" } else { "#000000" };
+    let text_color = "#E0E0E0"; // Light gray - visible on both light and dark backgrounds
     let track_color = if dark { "#48484A" } else { "#E5E5EA" };
 
     let mut elements = Vec::new();
@@ -106,14 +106,14 @@ pub fn build_full_svg(
 
         match mode {
             DisplayMode::Bar => {
-                let bar_w = 31.0_f64;
+                let bar_w = 49.0_f64;
                 let fill_w = (bar_w * usage / 100.0).clamp(0.0, bar_w);
-                let label = format!("{}: {}", name, pct_text);
+                let label = format!("{} {:.0}%", name, usage.round());
                 let x = x_offset;
                 elements.push(format!(
-                    r##"  <text x="{x}" y="6.5" font-family="system-ui,-apple-system,Helvetica" font-size="6.5" font-weight="500" fill="{tc}">{label}</text>
-  <rect x="{x}" y="11" width="{bw}" height="3" rx="1.5" fill="{tkc}"/>
-  <rect x="{x}" y="11" width="{fw:.1}" height="3" rx="1.5" fill="{fc}"/>"##,
+                    r##"  <text x="{x}" y="2" font-family="sans-serif" font-size="9" font-weight="bold" fill="{tc}" dominant-baseline="hanging">{label}</text>
+  <rect x="{x}" y="13" width="{bw}" height="3" rx="1.5" fill="{tkc}"/>
+  <rect x="{x}" y="13" width="{fw:.1}" height="3" rx="1.5" fill="{fc}"/>"##,
                     x = x, tc = text_color, tkc = track_color, fc = usage_color,
                     bw = bar_w, fw = fill_w, label = label,
                 ));
@@ -159,7 +159,15 @@ pub fn render_svg_to_rgba(svg: &str, pt_width: u32, pt_height: u32) -> Option<Ve
     let px_w = pt_width * scale;
     let px_h = pt_height * scale;
 
-    let opt = usvg::Options::default();
+    // Load system fonts for text rendering
+    let mut font_db = usvg::fontdb::Database::new();
+    font_db.load_system_fonts();
+    let font_db = std::sync::Arc::new(font_db);
+
+    let mut opt = usvg::Options::default();
+    opt.fontdb = font_db;
+    opt.font_family = "sans-serif".to_string();
+
     let tree = usvg::Tree::from_str(svg, &opt).ok()?;
 
     let mut pixmap = tiny_skia::Pixmap::new(px_w, px_h)?;
@@ -193,9 +201,9 @@ mod tests {
     #[test]
     fn test_render_bar_svg() {
         let svg = render_bar_svg("Test", 50.0, "50%", "#000", "#E5E5EA", "#34C759");
-        assert!(svg.contains("Test: 50%"));
+        assert!(svg.contains("Test 50%"));
         assert!(svg.contains("#34C759"));
-        assert!(svg.contains("viewBox=\"0 0 32 16\""));
+        assert!(svg.contains("viewBox=\"0 0 50 20\""));
     }
 
     #[test]
